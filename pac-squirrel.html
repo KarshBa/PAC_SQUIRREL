@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pac-Squirrel</title>
+  <style>
+    :root { --cell: 20; }
+    body { margin:0; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; font-family:sans-serif; }
+    h1 { font-size:1.4rem; margin:8px 0; }
+    #game { touch-action:none; border:2px solid #444; }
+    .controls { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; justify-content:center; }
+    button { padding:12px 16px; font-size:1.1rem; border:none; border-radius:8px; background:#333; color:#fff; min-width:72px; }
+    button:active { background:#555; }
+    .arrow-pad { display:grid; grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,60px); gap:6px; }
+    .arrow-pad button { font-size:1.4rem; }
+    .arrow-pad button[disabled] { visibility:hidden; }
+    @media (max-width:600px){
+      button { padding:14px; font-size:1rem; }
+      .arrow-pad { grid-template-columns:repeat(3,19vw); grid-template-rows:repeat(3,19vw); gap:4vw; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Pac-Squirrel</h1>
+  <canvas id="game" width="420" height="420"></canvas>
+
+  <div class="controls">
+    <button id="startBtn">Start</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div class="controls">
+    <div class="arrow-pad">
+      <button data-dir="up">↑</button>
+      <button disabled></button>
+      <button disabled></button>
+      <button data-dir="left">←</button>
+      <button disabled></button>
+      <button data-dir="right">→</button>
+      <button disabled></button>
+      <button data-dir="down">↓</button>
+      <button disabled></button>
+    </div>
+  </div>
+
+<script>
+// --- Game constants & helpers ---
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const cell = 20;                      // size of each tile in pixels
+const WALL   = 1;
+const PELLET = 2;
+const EMPTY  = 0;
+
+// --- Game state ---
+let map = [];
+let pelletsLeft = 0;
+let player = { x: 1, y: 1, dir: { x: 0, y: 0 } }; // the squirrel
+let bats   = [];                                   // the ghosts
+let gameRunning = false, intervalId;
+
+// --- Level layout (20 × 11) ---
+const layout = [
+  "####################",
+  "#........##........#",
+  "#.#.###.#.##.###.#.#",
+  "#.#.....#.##.....#.#",
+  "#.#.###.#####.###.##",
+  "#..................#",
+  "###.#.########.#.###",
+  "#...#....##....#...#",
+  "###.###.##.###.###.#",
+  "#..................#",
+  "####################"
+];
+
+// --- Initialisation & reset ---
+function initMap() {
+  pelletsLeft = 0;
+  map = [];
+  const h = layout.length;
+  const w = layout[0].length;
+  canvas.width  = w * cell;
+  canvas.height = h * cell;
+
+  for (let y = 0; y < h; y++) {
+    map[y] = [];
+    for (let x = 0; x < w; x++) {
+      const c = layout[y][x];
+      if (c === '#') {
+        map[y][x] = WALL;
+      } else {
+        map[y][x] = PELLET;
+        pelletsLeft++;
+      }
+    }
+  }
+  player = { x: 1, y: 1, dir: { x: 0, y: 0 } };
+  bats = [ { x: w - 2, y: 1 }, { x: 1, y: h - 2 }, { x: w - 2, y: h - 2 } ];
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Board
+  for (let y = 0; y < map.length; y++) {
+    for (let x = 0; x < map[0].length; x++) {
+      switch (map[y][x]) {
+        case WALL:
+          ctx.fillStyle = "#1e1e1e";
+          ctx.fillRect(x * cell, y * cell, cell, cell);
+          break;
+        case PELLET:
+          ctx.fillStyle = "#ffb703";
+          ctx.beginPath();
+          ctx.arc(x * cell + cell / 2, y * cell + cell / 2, cell / 6, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+      }
+    }
+  }
+  // Player (squirrel)
+  ctx.fillStyle = "#ffdd55";
+  ctx.beginPath();
+  ctx.arc(player.x * cell + cell / 2, player.y * cell + cell / 2, cell / 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bats (ghosts)
+  ctx.fillStyle = "#bb86fc";
+  bats.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b.x * cell + cell / 2, b.y * cell + cell / 2, cell / 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// --- Game loop ---
+function step() {
+  // Move player
+  const nx = player.x + player.dir.x;
+  const ny = player.y + player.dir.y;
+  if (map[ny][nx] !== WALL) {
+    player.x = nx;
+    player.y = ny;
+    if (map[ny][nx] === PELLET) {
+      map[ny][nx] = EMPTY;
+      pelletsLeft--;
+      if (pelletsLeft <= 0) {
+        alert("You collected every acorn! \nCongratulations 🎉");
+        resetGame();
+        return;
+      }
+    }
+  }
+
+  // Move bats (random step with slight bias towards the player)
+  bats.forEach(b => {
+    const options = [
+      { x: 1,  y: 0 }, { x: -1, y: 0 },
+      { x: 0,  y: 1 }, { x: 0,  y: -1 }
+    ];
+    // bias: sort by Manhattan distance to player
+    options.sort((d1, d2) => {
+      const dist1 = Math.abs((b.x + d1.x) - player.x) + Math.abs((b.y + d1.y) - player.y);
+      const dist2 = Math.abs((b.x + d2.x) - player.x) + Math.abs((b.y + d2.y) - player.y);
+      return dist1 - dist2 + (Math.random() - 0.5); // small randomness
+    });
+    for (let dir of options) {
+      const tx = b.x + dir.x;
+      const ty = b.y + dir.y;
+      if (map[ty][tx] !== WALL) { b.x = tx; b.y = ty; break; }
+    }
+    // Check collision with player
+    if (b.x === player.x && b.y === player.y) {
+      alert("A bat caught the squirrel! 😱\nTry again.");
+      resetGame();
+    }
+  });
+
+  draw();
+}
+
+// --- Control helpers ---
+function startGame() {
+  if (!gameRunning) {
+    gameRunning = true;
+    intervalId = setInterval(step, 150); // 150 ms per tick ≈ 6.6 fps (mobile-friendly)
+  }
+}
+
+function resetGame() {
+  clearInterval(intervalId);
+  gameRunning = false;
+  initMap();
+  draw();
+}
+
+// --- Input wiring ---
+initMap();
+draw();
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('resetBtn').addEventListener('click', resetGame);
+
+window.addEventListener('keydown', e => {
+  switch (e.key) {
+    case 'ArrowUp':    player.dir = { x: 0, y: -1 }; break;
+    case 'ArrowDown':  player.dir = { x: 0, y:  1 }; break;
+    case 'ArrowLeft':  player.dir = { x: -1, y: 0 }; break;
+    case 'ArrowRight': player.dir = { x: 1,  y: 0 }; break;
+  }
+});
+
+// On-screen arrow pad (for touch)
+document.querySelectorAll('.arrow-pad button[data-dir]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const d = btn.dataset.dir;
+    if (d === 'up')    player.dir = { x: 0, y: -1 };
+    if (d === 'down')  player.dir = { x: 0, y:  1 };
+    if (d === 'left')  player.dir = { x: -1, y: 0 };
+    if (d === 'right') player.dir = { x: 1,  y: 0 };
+  });
+});
+
+// Swipe gestures (mobile)
+let touchStartX, touchStartY;
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+});
+canvas.addEventListener('touchend', e => {
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 30)  player.dir = { x: 1,  y: 0 };
+    if (dx < -30) player.dir = { x: -1, y: 0 };
+  } else {
+    if (dy > 30)  player.dir = { x: 0, y:  1 };
+    if (dy < -30) player.dir = { x: 0, y: -1 };
+  }
+});
+</script>
+</body>
+</html>
