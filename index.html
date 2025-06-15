@@ -3,42 +3,23 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-<title>Pac-Squirrel</title>
+<title>Pac‑Squirrel</title>
 <style>
-  :root {
-    --tile: 24px;            /* logical tile size – canvas will upscale on Hi-DPI */
-    --maze-w: calc(var(--tile) * 28);
-    --maze-h: calc(var(--tile) * 31);
-  }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body {
-    margin:0; padding:0; height:100%; width:100%; background:#000; color:#fff;
-    display:flex; flex-direction:column; align-items:center; font-family:Arial,Helvetica,sans-serif;
-  }
-  #game {
-    image-rendering:pixelated;
-    background:#000;
-    width:100vw; max-width:600px; height:auto;
-  }
-  #score { font-size:18px; margin:6px 0; }
-  #ui {
-    width:100%; max-width:600px; display:flex; flex-direction:column; align-items:center; gap:12px; padding-bottom:40px;
-  }
-  .dpad { display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:8px; width:180px; }
-  .key {
-    width:56px; height:56px; background:#222; border:2px solid #555; border-radius:12px; display:flex; align-items:center; justify-content:center;
-    font-size:28px; line-height:1; color:#fff;
-  }
-  .key:active { background:#444; }
-  input[type="range"] { width:60%; }
-  label { font-size:14px; }
-  /* START MENU */
-  #menu {
-    position:fixed; inset:0; background:rgba(0,0,0,.9); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;
-  }
-  #menu h1 { font-size:48px; margin:0; color:#ffcf4a; text-shadow:0 0 6px #ffcf4a; }
-  #startBtn { font-size:24px; padding:12px 28px; border:none; border-radius:8px; background:#ffcf4a; color:#000; }
-  #startBtn:active { background:#ffc500; }
+  :root { --tile:24px; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;width:100%;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;font-family:Arial,Helvetica,sans-serif;}
+  #game{image-rendering:pixelated;background:#000;width:100vw;max-width:600px;height:auto;}
+  #score{font-size:18px;margin:6px 0;}
+  #ui{width:100%;max-width:600px;display:flex;flex-direction:column;align-items:center;gap:12px;padding-bottom:40px;}
+  .dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;width:180px;}
+  .key{width:56px;height:56px;background:#222;border:2px solid #555;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;}
+  .key:active{background:#444;}
+  input[type=range]{width:60%;}
+  label{font-size:14px;}
+  #menu{position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+  #menu h1{font-size:48px;margin:0;color:#ffcf4a;text-shadow:0 0 6px #ffcf4a;}
+  #startBtn{font-size:24px;padding:12px 28px;border:none;border-radius:8px;background:#ffcf4a;color:#000;}
+  #startBtn:active{background:#ffc500;}
 </style>
 </head>
 <body>
@@ -52,113 +33,27 @@
   </div>
   <label>Speed <input id="speed" type="range" min="1" max="10" value="5"></label>
 </div>
-<!-- Start menu overlay -->
-<div id="menu"><h1>Pac-Squirrel</h1><button id="startBtn">START</button></div>
+<div id="menu"><h1>Pac‑Squirrel</h1><button id="startBtn">START</button></div>
 <script>
-/*****************  CONFIG  *****************/
-const TILE = 24;                        // logical tile size in px
-const ROWS = 31, COLS = 28;              // maze size
-const BASE_INTERVAL = 200;               // ms when speed = 1
-const SPRITE_SRC = 'sprites.png';        // sprite sheet path
-/*******************************************/
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
-
-// Hi-DPI resize
-const scale = window.devicePixelRatio || 1;
-canvas.width  = COLS * TILE * scale;
-canvas.height = ROWS * TILE * scale;
-ctx.scale(scale, scale);
-
-const sprite = new Image();
-sprite.src = SPRITE_SRC;
-
-// Map legend: # wall, . pellet, o nut power-up
-const MAZE = [
-  '############################',
-  '#............##............#',
-  '#.####.#####.##.#####.####.#',
-  '#o####.#####.##.#####.####o#',
-  '#.####.#####.##.#####.####.#',
-  '#..........................#',
-  '#.####.##.########.##.####.#',
-  '#.####.##.########.##.####.#',
-  '#......##....##....##......#',
-  '######.##### ## #####.######',
-  '######.##### ## #####.######',
-  '######.##          ##.######',
-  '######.## ######## ##.######',
-  '######.## ######## ##.######',
-  '#............##............#',
-  '#.####.#####.##.#####.####.#',
-  '#.####.#####.##.#####.####.#',
-  '#o..##................##..o#',
-  '###.##.##.########.##.##.###',
-  '###.##.##.########.##.##.###',
-  '#......##....##....##......#',
-  '#.##########.##.##########.#',
-  '#.##########.##.##########.#',
-  '#..........................#',
-  '############################'
-];
-
-let pellets, score;
-function resetPellets(){
-  pellets = new Set();
-  MAZE.forEach((row,r)=>{ [...row].forEach((ch,c)=>{ if(ch==='.'||ch==='o') pellets.add(r+','+c);} );});
-  score=0; document.getElementById('score').textContent='Score: 0';
-}
+const TILE=24,ROWS=31,COLS=28,BASE_INTERVAL=200,SPRITE_SRC='sprites_n64.png';
+const canvas=document.getElementById('game');const ctx=canvas.getContext('2d',{alpha:false});ctx.imageSmoothingEnabled=false;
+const scale=window.devicePixelRatio||1;canvas.width=COLS*TILE*scale;canvas.height=ROWS*TILE*scale;ctx.scale(scale,scale);
+const sprite=new Image();sprite.src=SPRITE_SRC;sprite.crossOrigin='anonymous';sprite.onerror=()=>console.error('Sprite failed to load – check path & filename');
+const MAZE=[
+'############################','#............##............#','#.####.#####.##.#####.####.#','#o####.#####.##.#####.####o#','#.####.#####.##.#####.####.#','#..........................#','#.####.##.########.##.####.#','#.####.##.########.##.####.#','#......##....##....##......#','######.##### ## #####.######','######.##### ## #####.######','######.##          ##.######','######.## ######## ##.######','######.## ######## ##.######','#............##............#','#.####.#####.##.#####.####.#','#.####.#####.##.#####.####.#','#o..##................##..o#','###.##.##.########.##.##.###','###.##.##.########.##.##.###','#......##....##....##......#','#.##########.##.##########.#','#.##########.##.##########.#','#..........................#','############################'];
+let pellets,score;function resetPellets(){pellets=new Set();MAZE.forEach((row,r)=>{[...row].forEach((ch,c)=>{if(ch==='.'||ch==='o')pellets.add(r+','+c);});});score=0;document.getElementById('score').textContent='Score: 0';}
 resetPellets();
-
-const DIRS = {LEFT:[-1,0], RIGHT:[1,0], UP:[0,-1], DOWN:[0,1]};
-function canMove(x,y){ const c=Math.round(x), r=Math.round(y); return MAZE[r]?.[c] !== '#'; }
-class Entity {
-  constructor(x,y,frames){ this.x=x; this.y=y; this.dir='LEFT'; this.nextDir='LEFT'; this.frames=frames; this.f=0; }
-  tryTurn(){ const [dx,dy]=DIRS[this.nextDir]; if(canMove(this.x+dx,this.y+dy)) this.dir=this.nextDir; }
-  step(){ this.tryTurn(); const[dx,dy]=DIRS[this.dir]; if(canMove(this.x+dx,this.y+dy)){this.x+=dx;this.y+=dy;} if(this.x<0)this.x=COLS-1; if(this.x>=COLS)this.x=0; this.f=(this.f+1)%this.frames[this.dir].length; }
-  draw(){ const[sx,sy]=this.frames[this.dir][this.f]; ctx.drawImage(sprite,sx,sy,32,32,this.x*TILE,this.y*TILE,TILE,TILE); }
-}
-
-// frames! squirrel row0 4 dirs; bats rows1-4 4-frame flaps
-const sqFrames={RIGHT:[[0,0]],LEFT:[[32,0]],UP:[[64,0]],DOWN:[[96,0]]};
-const batFrames=c=>{const y=(1+c)*32;const f=[[0,y],[32,y],[64,y],[96,y]];return{LEFT:f,RIGHT:f,UP:f,DOWN:f};};
-const nutFrame=[0,5*32];
-
-let player, ghosts;
-function resetEntities(){
-  player=new Entity(13,23,sqFrames);
-  ghosts=[0,1,2,3].map(i=>new Entity(13+i%2,11+i/2|0,batFrames(i)));
-}
+const DIRS={LEFT:[-1,0],RIGHT:[1,0],UP:[0,-1],DOWN:[0,1]};function canMove(x,y){const c=Math.round(x),r=Math.round(y);return MAZE[r]?.[c]!=='#';}
+class Entity{constructor(x,y,frames){this.x=x;this.y=y;this.dir='LEFT';this.nextDir='LEFT';this.frames=frames;this.f=0;}tryTurn(){const[dx,dy]=DIRS[this.nextDir];if(canMove(this.x+dx,this.y+dy))this.dir=this.nextDir;}step(){this.tryTurn();const[dx,dy]=DIRS[this.dir];if(canMove(this.x+dx,this.y+dy)){this.x+=dx;this.y+=dy;}if(this.x<0)this.x=COLS-1;if(this.x>=COLS)this.x=0;this.f=(this.f+1)%this.frames[this.dir].length;}draw(){const[sx,sy]=this.frames[this.dir][this.f];ctx.drawImage(sprite,sx,sy,32,32,this.x*TILE,this.y*TILE,TILE,TILE);}}
+const sqFrames={RIGHT:[[0,0]],LEFT:[[32,0]],UP:[[64,0]],DOWN:[[96,0]]};const batFrames=c=>{const y=(1+c)*32;return{LEFT:[[0,y],[32,y],[64,y],[96,y]],RIGHT:[[0,y],[32,y],[64,y],[96,y]],UP:[[0,y],[32,y],[64,y],[96,y]],DOWN:[[0,y],[32,y],[64,y],[96,y]]};};
+let player,ghosts;function resetEntities(){player=new Entity(13,23,sqFrames);ghosts=[0,1,2,3].map(i=>new Entity(13+i%2,11+(i/2|0),batFrames(i)));}
 resetEntities();
-
-function ghostAI(g){ // simple random
-  const opts=['LEFT','RIGHT','UP','DOWN'].filter(d=>{const[dx,dy]=DIRS[d];return canMove(Math.round(g.x)+dx,Math.round(g.y)+dy);});
-  if(opts.length&&Math.random()<0.25) g.dir=opts[Math.random()*opts.length|0];
-  g.step();
-}
-function eat(){ const key=Math.round(player.y)+','+Math.round(player.x); if(pellets.has(key)){ pellets.delete(key); score+=1; document.getElementById('score').textContent='Score: '+score; }
-}
-function drawMaze(){ ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#001c3c'; MAZE.forEach((row,r)=>{ [...row].forEach((ch,c)=>{ if(ch==='#') ctx.fillRect(c*TILE,r*TILE,TILE,TILE);} );}); ctx.fillStyle='#ffd'; pellets.forEach(k=>{const[r,c]=k.split(',').map(Number); ctx.fillRect(c*TILE+TILE*0.4,r*TILE+TILE*0.4,TILE*0.2,TILE*0.2);}); }
-
-let interval=BASE_INTERVAL/5,timer=0,state='menu';
-function gameLoop(ts){ if(state==='playing'&& ts-timer>=interval){ player.step(); eat(); ghosts.forEach(ghostAI); timer=ts; }
-  drawMaze(); player.draw(); ghosts.forEach(g=>g.draw()); if(state==='menu'){ /* nothing extra for now */ }
-  requestAnimationFrame(gameLoop);
-}
-
-/********   INPUT   ********/ 
-function setDir(d){ player.nextDir=d; }
-['Up','Down','Left','Right'].forEach(dir=>{ document.getElementById('btn'+dir).addEventListener('pointerdown',()=>setDir(dir.toUpperCase())); });
-window.addEventListener('keydown',e=>{ const map={'ArrowUp':'UP','ArrowDown':'DOWN','ArrowLeft':'LEFT','ArrowRight':'RIGHT'}; if(map[e.key]){e.preventDefault(); setDir(map[e.key]);} if(state==='menu'&&(e.key===' '||e.key==='Enter')) startGame(); });
-
-document.getElementById('speed').addEventListener('input',e=>{const v=+e.target.value; interval=BASE_INTERVAL/v;});
-
-function startGame(){ document.getElementById('menu').style.display='none'; resetPellets(); resetEntities(); state='playing'; }
-
-document.getElementById('startBtn').addEventListener('click',startGame);
-
-sprite.onload=()=>requestAnimationFrame(gameLoop);
+function ghostAI(g){const opts=['LEFT','RIGHT','UP','DOWN'].filter(d=>{const[dx,dy]=DIRS[d];return canMove(Math.round(g.x)+dx,Math.round(g.y)+dy);});if(opts.length&&Math.random()<.25)g.dir=opts[Math.random()*opts.length|0];g.step();}
+function eat(){const key=Math.round(player.y)+','+Math.round(player.x);if(pellets.delete(key)){score++;document.getElementById('score').textContent='Score: '+score;}}
+function drawMaze(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#001c3c';MAZE.forEach((row,r)=>{[...row].forEach((ch,c)=>{if(ch==='#')ctx.fillRect(c*TILE,r*TILE,TILE,TILE);});});ctx.fillStyle='#ffd';pellets.forEach(k=>{const[r,c]=k.split(',').map(Number);ctx.fillRect(c*TILE+TILE*.4,r*TILE+TILE*.4,TILE*.2,TILE*.2);});}
+let interval=BASE_INTERVAL/5,timer=0,state='menu';function gameLoop(ts){if(state==='playing'&&ts-timer>=interval){player.step();eat();ghosts.forEach(ghostAI);timer=ts;}drawMaze();player.draw();ghosts.forEach(g=>g.draw());requestAnimationFrame(gameLoop);}function setDir(d){player.nextDir=d;}
+['Up','Down','Left','Right'].forEach(dir=>document.getElementById('btn'+dir).addEventListener('pointerdown',()=>setDir(dir.toUpperCase())));window.addEventListener('keydown',e=>{const m={'ArrowUp':'UP','ArrowDown':'DOWN','ArrowLeft':'LEFT','ArrowRight':'RIGHT'};if(m[e.key]){e.preventDefault();setDir(m[e.key]);}if(state==='menu'&&(e.key===' '||e.key==='Enter'))startGame();});document.getElementById('speed').addEventListener('input',e=>{interval=BASE_INTERVAL/+e.target.value;});function startGame(){document.getElementById('menu').style.display='none';resetPellets();resetEntities();state='playing';}
+document.getElementById('startBtn').addEventListener('click',startGame);sprite.onload=()=>requestAnimationFrame(gameLoop);
 </script>
 </body>
 </html>
