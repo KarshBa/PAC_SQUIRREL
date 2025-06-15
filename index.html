@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-<title>Pac-Squirrel</title>
+<title>Pac‑Squirrel</title>
 <style>
   :root {
-    --tile: 24px;            /* logical tile size – canvas will upscale on Hi-DPI */
+    --tile: 24px;            /* logical tile size – canvas will upscale on Hi‑DPI */
     --maze-w: calc(var(--tile) * 28);
     --maze-h: calc(var(--tile) * 31);
   }
@@ -43,12 +43,12 @@
     <button class="key" id="btnLeft">◄</button><div></div><button class="key" id="btnRight">►</button>
     <div></div><button class="key" id="btnDown">▼</button><div></div>
   </div>
-  <label>Speed <input id="speed" type="range" min="1" max="10" value="5"></label>
+  <label>Speed <input id="speed" type="range" min="1" max="10" value="5"></label>
 </div>
 <script>
 /*****************  CONFIG  *****************/
 const TILE = 24;                        // logical tile size in px
-const ROWS = 31, COLS = 28;             // classic Pac-Man maze
+const ROWS = 31, COLS = 28;             // classic Pac‑Man maze
 const BASE_INTERVAL = 200;              // ms when speed = 1
 const SPRITE_SRC = 'sprites.png';       // <-- download generated sprite sheet and put here
 /********************************************/
@@ -56,7 +56,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
-// Resize for Hi-DPI
+// Resize for Hi‑DPI
 const scale = window.devicePixelRatio || 1;
 canvas.width  = COLS * TILE * scale;
 canvas.height = ROWS * TILE * scale;
@@ -65,7 +65,7 @@ ctx.scale(scale, scale);
 const sprite = new Image();
 sprite.src = SPRITE_SRC;
 
-// Map legend: # wall, . pellet, o power-pellet, ' ' empty
+// Map legend: # wall, . pellet, o power‑pellet, ' ' empty
 const MAZE = [
   '############################',
   '#............##............#',
