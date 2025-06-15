@@ -1,246 +1,196 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pac-Squirrel</title>
-  <style>
-    :root { --cell: 20; }
-    body { margin:0; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; font-family:sans-serif; }
-    h1 { font-size:1.4rem; margin:8px 0; }
-    #game { touch-action:none; border:2px solid #444; }
-    .controls { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; justify-content:center; }
-    button { padding:12px 16px; font-size:1.1rem; border:none; border-radius:8px; background:#333; color:#fff; min-width:72px; }
-    button:active { background:#555; }
-    .arrow-pad { display:grid; grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,60px); gap:6px; }
-    .arrow-pad button { font-size:1.4rem; }
-    .arrow-pad button[disabled] { visibility:hidden; }
-    @media (max-width:600px){
-      button { padding:14px; font-size:1rem; }
-      .arrow-pad { grid-template-columns:repeat(3,19vw); grid-template-rows:repeat(3,19vw); gap:4vw; }
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Pac-Squirrel</title>
+<style>
+  :root {
+    --tile: 24px;            /* logical tile size – canvas will upscale on Hi-DPI */
+    --maze-w: calc(var(--tile) * 28);
+    --maze-h: calc(var(--tile) * 31);
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body {
+    margin:0; padding:0; height:100%; width:100%; background:#000; color:#fff;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    font-family:Arial,Helvetica,sans-serif;
+    touch-action:none;
+  }
+  #game {
+    image-rendering:pixelated; /* crispy retro look */
+    background:#000;
+    width:100vw; max-width:600px; height:auto;
+  }
+  #ui {
+    width:100%; max-width:600px; display:flex; flex-direction:column; align-items:center; gap:12px; padding:10px 0 40px;
+  }
+  .dpad { display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:8px; width:180px; }
+  .key {
+    width:56px; height:56px; background:#222; border:2px solid #555; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    font-size:28px; line-height:1; color:#fff;
+  }
+  .key:active { background:#444; }
+  input[type="range"] { width:60%; }
+  label { font-size:14px; }
+</style>
 </head>
 <body>
-  <h1>Pac-Squirrel</h1>
-  <canvas id="game" width="420" height="420"></canvas>
-
-  <div class="controls">
-    <button id="startBtn">Start</button>
-    <button id="resetBtn">Reset</button>
+<canvas id="game" width="672" height="744"></canvas>
+<div id="ui">
+  <div class="dpad">
+    <div></div><button class="key" id="btnUp">▲</button><div></div>
+    <button class="key" id="btnLeft">◄</button><div></div><button class="key" id="btnRight">►</button>
+    <div></div><button class="key" id="btnDown">▼</button><div></div>
   </div>
-
-  <div class="controls">
-    <div class="arrow-pad">
-      <button data-dir="up">↑</button>
-      <button disabled></button>
-      <button disabled></button>
-      <button data-dir="left">←</button>
-      <button disabled></button>
-      <button data-dir="right">→</button>
-      <button disabled></button>
-      <button data-dir="down">↓</button>
-      <button disabled></button>
-    </div>
-  </div>
-
+  <label>Speed <input id="speed" type="range" min="1" max="10" value="5"></label>
+</div>
 <script>
-// --- Game constants & helpers ---
+/*****************  CONFIG  *****************/
+const TILE = 24;                        // logical tile size in px
+const ROWS = 31, COLS = 28;             // classic Pac-Man maze
+const BASE_INTERVAL = 200;              // ms when speed = 1
+const SPRITE_SRC = 'sprites.png';       // <-- download generated sprite sheet and put here
+/********************************************/
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const cell = 20;                      // size of each tile in pixels
-const WALL   = 1;
-const PELLET = 2;
-const EMPTY  = 0;
+ctx.imageSmoothingEnabled = false;
 
-// --- Game state ---
-let map = [];
-let pelletsLeft = 0;
-let player = { x: 1, y: 1, dir: { x: 0, y: 0 } }; // the squirrel
-let bats   = [];                                   // the ghosts
-let gameRunning = false, intervalId;
+// Resize for Hi-DPI
+const scale = window.devicePixelRatio || 1;
+canvas.width  = COLS * TILE * scale;
+canvas.height = ROWS * TILE * scale;
+ctx.scale(scale, scale);
 
-// --- Level layout (20 × 11) ---
-const layout = [
-  "####################",
-  "#........##........#",
-  "#.#.###.#.##.###.#.#",
-  "#.#.....#.##.....#.#",
-  "#.#.###.#####.###.##",
-  "#..................#",
-  "###.#.########.#.###",
-  "#...#....##....#...#",
-  "###.###.##.###.###.#",
-  "#..................#",
-  "####################"
+const sprite = new Image();
+sprite.src = SPRITE_SRC;
+
+// Map legend: # wall, . pellet, o power-pellet, ' ' empty
+const MAZE = [
+  '############################',
+  '#............##............#',
+  '#.####.#####.##.#####.####.#',
+  '#o####.#####.##.#####.####o#',
+  '#.####.#####.##.#####.####.#',
+  '#..........................#',
+  '#.####.##.########.##.####.#',
+  '#.####.##.########.##.####.#',
+  '#......##....##....##......#',
+  '######.##### ## #####.######',
+  '######.##### ## #####.######',
+  '######.##          ##.######',
+  '######.## ######## ##.######',
+  '######.## ######## ##.######',
+  '#............##............#',
+  '#.####.#####.##.#####.####.#',
+  '#.####.#####.##.#####.####.#',
+  '#o..##................##..o#',
+  '###.##.##.########.##.##.###',
+  '###.##.##.########.##.##.###',
+  '#......##....##....##......#',
+  '#.##########.##.##########.#',
+  '#.##########.##.##########.#',
+  '#..........................#',
+  '############################'
 ];
 
-// --- Initialisation & reset ---
-function initMap() {
-  pelletsLeft = 0;
-  map = [];
-  const h = layout.length;
-  const w = layout[0].length;
-  canvas.width  = w * cell;
-  canvas.height = h * cell;
-
-  for (let y = 0; y < h; y++) {
-    map[y] = [];
-    for (let x = 0; x < w; x++) {
-      const c = layout[y][x];
-      if (c === '#') {
-        map[y][x] = WALL;
-      } else {
-        map[y][x] = PELLET;
-        pelletsLeft++;
-      }
-    }
-  }
-  player = { x: 1, y: 1, dir: { x: 0, y: 0 } };
-  bats = [ { x: w - 2, y: 1 }, { x: 1, y: h - 2 }, { x: w - 2, y: h - 2 } ];
-}
-
-// --- Drawing ---
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Board
-  for (let y = 0; y < map.length; y++) {
-    for (let x = 0; x < map[0].length; x++) {
-      switch (map[y][x]) {
-        case WALL:
-          ctx.fillStyle = "#1e1e1e";
-          ctx.fillRect(x * cell, y * cell, cell, cell);
-          break;
-        case PELLET:
-          ctx.fillStyle = "#ffb703";
-          ctx.beginPath();
-          ctx.arc(x * cell + cell / 2, y * cell + cell / 2, cell / 6, 0, Math.PI * 2);
-          ctx.fill();
-          break;
-      }
-    }
-  }
-  // Player (squirrel)
-  ctx.fillStyle = "#ffdd55";
-  ctx.beginPath();
-  ctx.arc(player.x * cell + cell / 2, player.y * cell + cell / 2, cell / 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Bats (ghosts)
-  ctx.fillStyle = "#bb86fc";
-  bats.forEach(b => {
-    ctx.beginPath();
-    ctx.arc(b.x * cell + cell / 2, b.y * cell + cell / 2, cell / 2, 0, Math.PI * 2);
-    ctx.fill();
-  });
-}
-
-// --- Game loop ---
-function step() {
-  // Move player
-  const nx = player.x + player.dir.x;
-  const ny = player.y + player.dir.y;
-  if (map[ny][nx] !== WALL) {
-    player.x = nx;
-    player.y = ny;
-    if (map[ny][nx] === PELLET) {
-      map[ny][nx] = EMPTY;
-      pelletsLeft--;
-      if (pelletsLeft <= 0) {
-        alert("You collected every acorn! \nCongratulations 🎉");
-        resetGame();
-        return;
-      }
-    }
-  }
-
-  // Move bats (random step with slight bias towards the player)
-  bats.forEach(b => {
-    const options = [
-      { x: 1,  y: 0 }, { x: -1, y: 0 },
-      { x: 0,  y: 1 }, { x: 0,  y: -1 }
-    ];
-    // bias: sort by Manhattan distance to player
-    options.sort((d1, d2) => {
-      const dist1 = Math.abs((b.x + d1.x) - player.x) + Math.abs((b.y + d1.y) - player.y);
-      const dist2 = Math.abs((b.x + d2.x) - player.x) + Math.abs((b.y + d2.y) - player.y);
-      return dist1 - dist2 + (Math.random() - 0.5); // small randomness
-    });
-    for (let dir of options) {
-      const tx = b.x + dir.x;
-      const ty = b.y + dir.y;
-      if (map[ty][tx] !== WALL) { b.x = tx; b.y = ty; break; }
-    }
-    // Check collision with player
-    if (b.x === player.x && b.y === player.y) {
-      alert("A bat caught the squirrel! 😱\nTry again.");
-      resetGame();
-    }
-  });
-
-  draw();
-}
-
-// --- Control helpers ---
-function startGame() {
-  if (!gameRunning) {
-    gameRunning = true;
-    intervalId = setInterval(step, 150); // 150 ms per tick ≈ 6.6 fps (mobile-friendly)
-  }
-}
-
-function resetGame() {
-  clearInterval(intervalId);
-  gameRunning = false;
-  initMap();
-  draw();
-}
-
-// --- Input wiring ---
-initMap();
-draw();
-
-document.getElementById('startBtn').addEventListener('click', startGame);
-document.getElementById('resetBtn').addEventListener('click', resetGame);
-
-window.addEventListener('keydown', e => {
-  switch (e.key) {
-    case 'ArrowUp':    player.dir = { x: 0, y: -1 }; break;
-    case 'ArrowDown':  player.dir = { x: 0, y:  1 }; break;
-    case 'ArrowLeft':  player.dir = { x: -1, y: 0 }; break;
-    case 'ArrowRight': player.dir = { x: 1,  y: 0 }; break;
-  }
-});
-
-// On-screen arrow pad (for touch)
-document.querySelectorAll('.arrow-pad button[data-dir]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const d = btn.dataset.dir;
-    if (d === 'up')    player.dir = { x: 0, y: -1 };
-    if (d === 'down')  player.dir = { x: 0, y:  1 };
-    if (d === 'left')  player.dir = { x: -1, y: 0 };
-    if (d === 'right') player.dir = { x: 1,  y: 0 };
+const pellets = new Set();
+MAZE.forEach((row, r) => {
+  [...row].forEach((ch, c) => {
+    if (ch === '.' || ch === 'o') pellets.add(r + ',' + c);
   });
 });
 
-// Swipe gestures (mobile)
-let touchStartX, touchStartY;
-canvas.addEventListener('touchstart', e => {
-  const t = e.touches[0];
-  touchStartX = t.clientX;
-  touchStartY = t.clientY;
-});
-canvas.addEventListener('touchend', e => {
-  const t = e.changedTouches[0];
-  const dx = t.clientX - touchStartX;
-  const dy = t.clientY - touchStartY;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 30)  player.dir = { x: 1,  y: 0 };
-    if (dx < -30) player.dir = { x: -1, y: 0 };
-  } else {
-    if (dy > 30)  player.dir = { x: 0, y:  1 };
-    if (dy < -30) player.dir = { x: 0, y: -1 };
+const DIRS = {LEFT:[-1,0], RIGHT:[1,0], UP:[0,-1], DOWN:[0,1]};
+function canMove(x,y){
+  const c = Math.round(x), r = Math.round(y);
+  return MAZE[r]?.[c] !== '#';
+}
+class Entity {
+  constructor(x,y,frames){
+    this.x=x; this.y=y; this.dir='LEFT'; this.nextDir='LEFT'; this.frames=frames; this.frameIx=0;
   }
+  tryTurn(){
+    const [dx,dy]=DIRS[this.nextDir];
+    if(canMove(this.x+dx,this.y+dy)) this.dir=this.nextDir;
+  }
+  step(){
+    this.tryTurn();
+    const [dx,dy]=DIRS[this.dir];
+    if(canMove(this.x+dx,this.y+dy)){ this.x+=dx; this.y+=dy; }
+    // tunnel wrap
+    if(this.x<0) this.x=COLS-1; if(this.x>=COLS) this.x=0;
+    this.frameIx = (this.frameIx+1)%this.frames[this.dir].length;
+  }
+  draw(){
+    const [sx,sy] = this.frames[this.dir][this.frameIx];
+    ctx.drawImage(sprite,sx,sy,32,32,this.x*TILE,this.y*TILE,TILE,TILE);
+  }
+}
+
+// Player squirrel frames (row 0: right,left,up,down)
+const sqFrames = {
+  RIGHT:[[0,0]], LEFT:[[32,0]], UP:[[64,0]], DOWN:[[96,0]]
+};
+// Ghost bat frames (rows 1 & 2) – wing up/down per color
+const batFrames = color => ({
+  LEFT:[[0,32+color*64],[0,64+color*64]], RIGHT:[[32,32+color*64],[32,64+color*64]], UP:[[64,32+color*64],[64,64+color*64]], DOWN:[[96,32+color*64],[96,64+color*64]]
+});
+
+const player = new Entity(13,23,sqFrames);
+const ghosts=[0,1,2,3].map(i=>new Entity(13,11,batFrames(i)));
+
+function ghostAI(g){
+  // naïve random at intersections
+  const choices=['LEFT','RIGHT','UP','DOWN'].filter(d=>{
+    const [dx,dy]=DIRS[d];
+    return canMove(Math.round(g.x)+dx,Math.round(g.y)+dy);
+  });
+  if(choices.length>0 && Math.random()<0.3) g.dir=choices[Math.random()*choices.length|0];
+  g.step();
+}
+
+function eatPellets(){
+  const key=Math.round(player.y)+','+Math.round(player.x);
+  pellets.delete(key);
+}
+function drawMaze(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#001c3c';
+  MAZE.forEach((row,r)=>{ [...row].forEach((ch,c)=>{ if(ch==='#') ctx.fillRect(c*TILE,r*TILE,TILE,TILE); }); });
+  ctx.fillStyle='#ffd';
+  pellets.forEach(k=>{ const [r,c]=k.split(',').map(Number); ctx.fillRect(c*TILE+TILE*0.4,r*TILE+TILE*0.4,TILE*0.2,TILE*0.2); });
+}
+
+let interval = BASE_INTERVAL/5; // will be updated by speed slider
+let timer = 0;
+function gameLoop(ts){
+  if(ts - timer >= interval){
+    player.step();
+    eatPellets();
+    ghosts.forEach(ghostAI);
+    timer = ts;
+  }
+  drawMaze();
+  player.draw(); ghosts.forEach(g=>g.draw());
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+
+/**************  INPUT  ****************/ 
+function setDir(d){ player.nextDir=d; }
+['Up','Down','Left','Right'].forEach(dir=>{
+  document.getElementById('btn'+dir).addEventListener('pointerdown',()=>setDir(dir.toUpperCase()));
+});
+window.addEventListener('keydown',e=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){
+    e.preventDefault();
+    setDir(e.key.replace('Arrow','').toUpperCase());
+  }
+});
+
+document.getElementById('speed').addEventListener('input',e=>{
+  const v=+e.target.value; interval = BASE_INTERVAL / v;
 });
 </script>
 </body>
